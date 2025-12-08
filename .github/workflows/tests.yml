@@ -147,7 +147,7 @@ jobs:
           # Fix for netcommon dependency in tox environments
           if ! grep -q "ansible.netcommon" ansible_collections/junipernetworks/junos/galaxy.yml; then
              echo "Injecting ansible.netcommon dependency..."
-             sed -i '/dependencies:/a \ \ ansible.netcommon: "*"' ansible_collections/junipernetworks/junos/galaxy.yml
+             sed -i '/dependencies:/a \ \ ansible.netcommon: "==8.1.0"' ansible_collections/junipernetworks/junos/galaxy.yml
           fi
       - name: "Install tox-ansible, includes tox"
         run: python -m pip install tox-ansible
