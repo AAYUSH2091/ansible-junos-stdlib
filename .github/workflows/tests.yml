@@ -28,7 +28,7 @@ jobs:
         collection: [juniper/device, junipernetworks/junos]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Ensure ansible-core and galaxy-importer is installed
         shell: bash
@@ -79,12 +79,12 @@ jobs:
           - python: "3.12"
             ansible: "2.19"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           ref: "${{ github.event.pull_request.head.sha }}"
           fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
       - name: "Install tox-ansible, includes tox"
@@ -126,12 +126,12 @@ jobs:
           - python: "3.12"
             ansible: "2.19"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           ref: "${{ github.event.pull_request.head.ref }}"
           repository: "${{ github.event.pull_request.head.repo.full_name }}"
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python }}"
       - name: Prepare local dependencies
@@ -144,6 +144,7 @@ jobs:
           cd -
           echo "Injecting local build into galaxy.yml..."
           sed -i 's|juniper.device:.*|juniper.device: /tmp/juniper-device-local.tar.gz|' ansible_collections/junipernetworks/junos/galaxy.yml
+          # Fix for netcommon dependency in tox environments
           if ! grep -q "ansible.netcommon" ansible_collections/junipernetworks/junos/galaxy.yml; then
              echo "Injecting ansible.netcommon dependency..."
              sed -i '/dependencies:/a \ \ ansible.netcommon: "*"' ansible_collections/junipernetworks/junos/galaxy.yml
@@ -187,9 +188,9 @@ jobs:
           - ansible_version: "devel"
             python_version: "3.12"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python_version }}"
       - name: Install ansible-compat, for tests
@@ -204,19 +205,25 @@ jobs:
           else
             python -m pip install git+https://github.com/ansible/ansible.git@${{ matrix.ansible_version }}
           fi
-      - name: Pre install collections dependencies first so the collection install does not
+
+      - name: Install collection dependencies
         run: |
-          ansible-galaxy collection install git+https://github.com/ansible-collections/ansible.utils.git
-          ansible-galaxy collection install git+https://github.com/ansible-collections/ansible.netcommon.git
+          # Using '-p .' installs the collections into ./ansible_collections/
+          # This structure allows ansible-test to find the dependencies (netcommon/utils)
+          # without needing them installed in the system/user path.
+          ansible-galaxy collection install ansible.netcommon ansible.utils -p .
+
       - name: Read collection metadata from galaxy.yml
         working-directory: ansible_collections/${{ matrix.collection }}
         run: |
           python -c "import yaml; print(yaml.safe_load(open('galaxy.yml'))['version'])"
+
       - name: Build and install the collection
         working-directory: ansible_collections/${{ matrix.collection }}
         run: |
           ansible-galaxy collection build --force
           ansible-galaxy collection install *-*.tar.gz --force
+
       - name: Print the ansible version
         run: ansible --version
       - name: Print the python dependencies
