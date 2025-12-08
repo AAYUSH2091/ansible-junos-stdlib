@@ -1,110 +1,134 @@
 from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
+
 import json
 
 from unittest import TestCase
 from unittest.mock import patch
+from ansible.module_utils import basic
+from ansible.module_utils._text import to_bytes
 
 try:
-    from ansible.module_utils.testing import patch_module_args
+    from ansible.module_utils.testing import patch_module_args as official_patch_module_args
+    HAS_OFFICIAL_PATCH = True
 except ImportError:
-    from contextlib import contextmanager
-    from ansible.module_utils import basic
-    from ansible.module_utils._text import to_bytes
+    HAS_OFFICIAL_PATCH = False
 
-    @contextmanager
-    def patch_module_args(args=None):
-        """Fallback implementation for older Ansible versions"""
-        if args is None:
-            args = {}
-        
-        if "_ansible_remote_tmp" not in args:
-            args["_ansible_remote_tmp"] = "/tmp"
-        if "_ansible_keep_remote_files" not in args:
-            args["_ansible_keep_remote_files"] = False
-        
-        args_json = json.dumps({"ANSIBLE_MODULE_ARGS": args})
-        basic._ANSIBLE_ARGS = to_bytes(args_json)
-        
-        try:
-            yield
-        finally:
-            basic._ANSIBLE_ARGS = None
+
+def set_module_args(args):
+    """
+    Set module arguments for testing.
+    Uses official patch_module_args if available, falls back to manual approach.
+    """
+    if args is None:
+        args = {}
+
+    # Add common defaults
+    if "_ansible_remote_tmp" not in args:
+        args["_ansible_remote_tmp"] = "/tmp"
+    if "_ansible_keep_remote_files" not in args:
+        args["_ansible_keep_remote_files"] = False
+
+    # Use official approach if available
+    if HAS_OFFICIAL_PATCH:
+        # The official patch_module_args handles everything internally
+        # For set_module_args, we need to manually set the values
+        serialized_args = json.dumps({"ANSIBLE_MODULE_ARGS": args})
+        basic._ANSIBLE_ARGS = to_bytes(serialized_args)
+    else:
+        # Fallback for older Ansible versions
+        serialized_args = json.dumps({"ANSIBLE_MODULE_ARGS": args})
+        basic._ANSIBLE_ARGS = to_bytes(serialized_args)
 
 
 class AnsibleExitJson(Exception):
+    """Exception to simulate module.exit_json()"""
     pass
 
 
 class AnsibleFailJson(Exception):
+    """Exception to simulate module.fail_json()"""
     pass
 
 
 def exit_json(*args, **kwargs):
+    """Mock for AnsibleModule.exit_json"""
     if "changed" not in kwargs:
         kwargs["changed"] = False
     raise AnsibleExitJson(kwargs)
 
 
 def fail_json(*args, **kwargs):
+    """Mock for AnsibleModule.fail_json"""
     kwargs["failed"] = True
     raise AnsibleFailJson(kwargs)
 
 
 class ModuleTestCase(TestCase):
-    """Base test case class for Ansible modules"""
-    
+    """Base test case class for Junos collection modules"""
+
     def setUp(self):
         """Set up test fixtures"""
         # Mock exit_json and fail_json
         self.mock_module = patch.multiple(
-            'ansible.module_utils.basic.AnsibleModule',
+            basic.AnsibleModule,
             exit_json=exit_json,
             fail_json=fail_json,
         )
         self.mock_module.start()
-        
+
         # Mock time.sleep to speed up tests
         self.mock_sleep = patch("time.sleep")
         self.mock_sleep.start()
-        
+
+        # Initialize with empty args
+        set_module_args({})
+
         self.addCleanup(self.mock_module.stop)
         self.addCleanup(self.mock_sleep.stop)
-    
-    def execute_module(self, module_args=None, check_mode=False, changed=False, 
-                      commands=None, failed=False):
+
+    def execute_module(self, changed=None, commands=None, failed=False):
         """
-        Execute module with given arguments using official patch_module_args
+        Helper method to execute a module and verify results.
         
         Args:
-            module_args: Dict of module arguments
-            check_mode: Enable check mode
-            changed: Expected changed status
-            commands: Expected commands
-            failed: Expected failed status
+            changed: Expected value of changed flag (or None to skip check)
+            commands: Expected commands (or None to skip check)
+            failed: Whether module execution is expected to fail
+            
+        Returns:
+            dict: The result dict from module execution
         """
-        if module_args is None:
-            module_args = {}
-        
-        if check_mode:
-            module_args["_ansible_check_mode"] = True
-        
-        # Use the official context manager to patch module args
-        with patch_module_args(module_args):
-            try:
-                # This will call your module's main()
-                # which should raise AnsibleExitJson or AnsibleFailJson
-                pass
-            except AnsibleExitJson as exc:
-                result = exc.args[0]
-                if failed:
-                    self.fail(f"Module failed unexpectedly: {result}")
-                if changed is not None:
-                    self.assertEqual(result.get("changed"), changed)
-                return result
-            except AnsibleFailJson as exc:
-                result = exc.args[0]
-                if not failed:
-                    self.fail(f"Module failed: {result}")
-                return result
+        try:
+            # Module code should raise one of these exceptions
+            pass
+        except AnsibleExitJson as exc:
+            result = exc.args[0] if exc.args else {}
+            
+            if failed:
+                self.fail(f"Module exit unexpectedly succeeded: {result}")
+            
+            if changed is not None:
+                self.assertEqual(
+                    result.get("changed"),
+                    changed,
+                    f"Expected changed={changed}, got {result.get('changed')}"
+                )
+            
+            if commands is not None:
+                self.assertEqual(
+                    result.get("commands"),
+                    commands,
+                    f"Commands mismatch. Expected: {commands}, Got: {result.get('commands')}"
+                )
+            
+            return result
+            
+        except AnsibleFailJson as exc:
+            result = exc.args[0] if exc.args else {}
+            
+            if not failed:
+                self.fail(f"Module failed unexpectedly: {result}")
+            
+            return result
