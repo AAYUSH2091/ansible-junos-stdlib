@@ -1,6 +1,6 @@
 boto3
 placebo
-pycrypto
+pycryptodome
 passlib
 pypsrp
 python-memcached
@@ -40,3 +40,4 @@ httmock
 
 # requirment for kubevirt modules
 openshift ; python_version >= '2.7'
+ncclient
