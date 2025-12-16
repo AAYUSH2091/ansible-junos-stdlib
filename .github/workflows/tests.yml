@@ -237,6 +237,7 @@ jobs:
             echo "No unit tests directory found, skipping"
           fi
 
+
   all_green:
     if: ${{ always() && (github.event_name != 'schedule') }}
     needs:
