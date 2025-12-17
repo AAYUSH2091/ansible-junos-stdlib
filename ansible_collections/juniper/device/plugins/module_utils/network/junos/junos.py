@@ -22,7 +22,6 @@ from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 import collections
 import json
-import q
 
 from contextlib import contextmanager
 from copy import deepcopy
